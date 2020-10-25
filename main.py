@@ -54,8 +54,8 @@ class Converter:
         hour = read_int(data, 17, 17, offset)
         minute = read_int(data, 18, 18, offset)
         second = read_int(data, 19, 19, offset)
-        tstr = f"{year}{month}{day}{hour}{minute}{second}"
-        self.time_reference = datetime.strptime(tstr, "%Y%m%d%H%M%S")
+        tstr = f"{year:0>4}-{month:0>2}-{day:0>2}T{hour:0>2}:{minute:0>2}:{second:0>2}"
+        self.time_reference = datetime.strptime(tstr, "%Y-%m-%dT%H:%M:%S")
         offset += read_int(data, 1, 4, offset)
 
         # The time(time) coordinate variable stores the time of each ray, in seconds, from a reference time,
