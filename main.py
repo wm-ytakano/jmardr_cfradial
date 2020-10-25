@@ -293,7 +293,7 @@ class Converter:
 
         # Coordinate variable for range. Range to center of each bin.
         radar_range = nc.createVariable(
-            "range", dtype("float").char, ("range"))
+            "range", dtype("float32").char, ("range"))
         radar_range[:] = self.radar_range.astype("float32")
         radar_range.standard_name = "projection_range_coordinate"
         radar_range.long_name = "range_to_measurement_volume"
@@ -374,8 +374,8 @@ class Converter:
 
         # Target angle for the sweep. elevation in most modes. azimuth in RHI mode.
         fixed_angle = nc.createVariable(
-            "fixed_angle", dtype("float").char, ("sweep"))
-        fixed_angle[:] = np.array(self.fixed_angle, dtype="float")
+            "fixed_angle", dtype("float32").char, ("sweep"))
+        fixed_angle[:] = np.array(self.fixed_angle, dtype="float32")
         fixed_angle.long_name = "target_fixed_angle"
         fixed_angle.units = "degrees"
         fixed_angle._fillValue = self._fillValueF32
@@ -402,7 +402,7 @@ class Converter:
         nc = self.nc
 
         # Azimuth of antenna, relative to true north.
-        azimuth = nc.createVariable("azimuth", dtype("float").char, ("time"))
+        azimuth = nc.createVariable("azimuth", dtype("float32").char, ("time"))
         azimuth[:] = np.array(self.azimuth, dtype="float32")
         azimuth.standard_name = "ray_azimuth_angle"
         azimuth.long_name = "azimuth_angle_from_true_north"
@@ -412,7 +412,7 @@ class Converter:
 
         # Elevation of antenna, relative to the horizontal plane.
         elevation = nc.createVariable(
-            "elevation", dtype("float").char, ("time"))
+            "elevation", dtype("float32").char, ("time"))
         elevation[:] = np.array(self.elevation, dtype="float32")
         elevation.standard_name = "ray_elevation_angle"
         elevation.long_name = "elevation_angle_from_horizontal_plane"
@@ -424,7 +424,7 @@ class Converter:
         nc = self.nc
 
         variable = nc.createVariable(
-            "DBZ", dtype("float").char, ("n_points"))
+            "DBZ", dtype("float32").char, ("n_points"))
         variable[:] = self.data
         variable.standard_name = "equivalent_reflectivity_factor"
         variable.units = "dBZ"
@@ -435,7 +435,7 @@ class Converter:
 
         # List of operating frequencies, in Hertz. In most cases, only a single frequency is used.
         frequency = nc.createVariable(
-            "frequency", dtype("float").char, ("frequency"))
+            "frequency", dtype("float32").char, ("frequency"))
         frequency[:] = np.array([self.frequency], dtype="float32")
         frequency.long_name = "radiation_frequency"
         frequency.units = "s-1"
