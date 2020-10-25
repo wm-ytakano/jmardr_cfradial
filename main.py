@@ -287,7 +287,7 @@ class Converter:
         time = nc.createVariable("time", dtype("double").char, ("time"))
         time[:] = np.array(self.time)
         time.long_name = "time_in_seconds_since_volume_start"
-        time.units = "seconds since yyyy-mm-ddThh:mm:ssZ"
+        time.units = f"seconds since {self.time_reference.strftime('%Y-%m-%dT%H:%M:%SZ')}"
         time.calendar = "gregorian"
         time._fillValue = self._fillValueF64
 
