@@ -115,7 +115,7 @@ class Converter:
             if data[offset + 4] == 4:
                 self.latitude = read_int(data, 15, 18, offset) * 1e-6
                 self.longitude = read_int(data, 19, 22, offset) * 1e-6
-                self.altitude_agl = read_int(data, 23, 24, offset) * 1e-1
+                self.altitude = read_int(data, 23, 24, offset) * 1e-1
                 self.site_id = read_int(data, 29, 30, offset)
                 self.frequency = read_int(data, 33, 36, offset) * 1e3
                 time_start = read_int_sgn(data, 51, 52, offset)
@@ -344,15 +344,14 @@ class Converter:
         longitude.units = "degrees_east"
         longitude._fillValue = self._fillValueF64
 
-        # Altitude of instrument above ground level
+        # Altitude of instrument above mean sea level.
         # For a stationary platform, this is a scalar.
         # For a moving platform, this is a vector.
-        # Omit if not known.
-        altitude_agl = nc.createVariable("altitude_agl", dtype('double').char)
-        altitude_agl[:] = self.altitude_agl
-        altitude_agl.long_name = "altitude_above_ground_level"
-        altitude_agl.units = "meters"
-        altitude_agl._fillValue = self._fillValueF64
+        altitude = nc.createVariable("altitude", dtype('double').char)
+        altitude[:] = self.altitude
+        altitude.long_name = "altitude"
+        altitude.units = "meters"
+        altitude._fillValue = self._fillValueF64
 
     def write_sweep_variables(self):
         nc = self.nc
