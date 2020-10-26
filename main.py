@@ -20,9 +20,9 @@ def main():
 
 
 class Converter:
-    _fillValueF32 = np.array(9.999e20, "float32")
-    _fillValueF64 = np.array(9.999e20, "float64")
-    _fillValueI32 = np.array(-9999, "int32")
+    _FillValueF32 = np.array(9.999e20, "float32")
+    _FillValueF64 = np.array(9.999e20, "float64")
+    _FillValueI32 = np.array(-9999, "int32")
 
     def convert(self, gribpath, ncpath, workdir):
         self.gribpath = gribpath
@@ -69,13 +69,6 @@ class Converter:
         # The azimuth(time) coordinate variable stores the azimuth angle for each ray
         self.azimuth = []
 
-        # The ray_n_gates(time) variable stores the number of gates in a ray.
-        self.ray_n_gates = []
-
-        # The ray_start_index(time) variable stores the start index of the moments data for a ray,
-        # relative to the start of the moments array.
-        self.ray_start_index = []
-
         # The number of the sweep, in the volume scan. 0-based.
         self.sweep_number = []
 
@@ -93,6 +86,8 @@ class Converter:
 
         # nbの最大値
         self.max_nb = 0
+        self.nb_list = []
+        self.nr_list = []
 
         while True:
             # Section 8
@@ -122,8 +117,8 @@ class Converter:
                 time_end = read_int_sgn(data, 53, 54, offset)
 
                 self.time.extend(np.linspace(time_start, time_end, nr))
-                self.ray_n_gates.extend([nb for i in range(nr)])
-                self.ray_start_index.extend([0 for i in range(nr)])
+                self.nb_list.append(nb)
+                self.nr_list.append(nr)
 
                 self.sweep_start_ray_index.append(len(self.azimuth))
                 azimuth = [(azi + 360 * i / nr) % 360 for i in range(nr)]
@@ -150,10 +145,24 @@ class Converter:
         subprocess.run(["wgrib2", self.gribpath, "-no_header", "-bin", grdname],
                        stdout=subprocess.DEVNULL,
                        stderr=subprocess.DEVNULL)
-        self.data = np.fromfile(grdname, dtype="<f")
+        buffer = np.fromfile(grdname, dtype="<f")
         subprocess.run(["rm", "-f", grdname],
                        stdout=subprocess.DEVNULL,
                        stderr=subprocess.DEVNULL)
+
+        self.data = np.full((np.sum(self.nr_list), self.max_nb),
+                            self._FillValueF32,
+                            dtype="float32")
+        br_offset = 0
+        r_offset = 0
+        for nb, nr in zip(self.nb_list, self.nr_list):
+            bstr = br_offset
+            bend = br_offset + nb * nr
+            dstr = r_offset
+            dend = r_offset + nr
+            self.data[dstr:dend, 0:nb] = buffer[bstr:bend].reshape((nr, nb))
+            br_offset += nb * nr
+            r_offset += nr
 
     def write_netcdf(self):
         self.nc = netCDF4.Dataset(self.ncpath, "w", format="NETCDF4")
@@ -161,7 +170,7 @@ class Converter:
         self.write_dimensions()  # Section 4.2
         self.write_global_variables()  # Section 4.3
         self.write_coordinate_variables()  # Section 4.4
-        self.write_ray_dimension_variables()  # Section 4.5
+        # Section 4.5 Ray dimension variables: ommited
         self.write_location_variables()  # Section 4.6
         self.write_sweep_variables()  # Section 4.7
         self.write_sensor_pointing_variables()  # Section 4.8
@@ -210,7 +219,7 @@ class Converter:
         nc.setncattr("platform_is_mobile", "false")
 
         # [optional] "true" or "false" Assumed "false" if missing.
-        nc.setncattr("n_gates_vary", "true")
+        nc.setncattr("n_gates_vary", "false")
 
         # [optional] "true" or "false" Assumed "true”" if missing. This is set to false if the rays are not stored in time order.
         nc.setncattr("ray_times_increase", "true")
@@ -222,15 +231,10 @@ class Converter:
         nc = self.nc
 
         # The number of rays. This dimension is optionally UNLIMITED
-        nc.createDimension("time", len(self.ray_n_gates))
+        nc.createDimension("time", len(self.time))
 
         # The number of range bin
         nc.createDimension("range", self.max_nb)
-
-        # [optional] Total number of gates in file. Required for variable number of gate
-        # The n_points dimension indicates the total number of gates stored in all of the rays.
-        # It is equal to the sumof ray_n_gates over all rays.
-        nc.createDimension("n_points", np.sum(np.array(self.ray_n_gates)))
 
         # The number of sweeps
         nc.createDimension("sweep", len(self.sweep_number))
@@ -284,16 +288,18 @@ class Converter:
 
         # Coordinate variable for time.
         # Time at center of each ray, in fractional seconds since time_coverage_start.
-        time = nc.createVariable("time", dtype("double").char, ("time"))
+        time = nc.createVariable("time",
+                                 dtype("double").char,
+                                 ("time"))
         time[:] = np.array(self.time)
         time.long_name = "time_in_seconds_since_volume_start"
         time.units = f"seconds since {self.time_reference.strftime('%Y-%m-%dT%H:%M:%SZ')}"
         time.calendar = "gregorian"
-        time._fillValue = self._fillValueF64
 
         # Coordinate variable for range. Range to center of each bin.
-        radar_range = nc.createVariable(
-            "range", dtype("float32").char, ("range"))
+        radar_range = nc.createVariable("range",
+                                        dtype("float32").char,
+                                        ("range"))
         radar_range[:] = self.radar_range.astype("float32")
         radar_range.standard_name = "projection_range_coordinate"
         radar_range.long_name = "range_to_measurement_volume"
@@ -302,26 +308,6 @@ class Converter:
         radar_range.meters_to_center_of_first_gate = radar_range[0]
         radar_range.meters_between_gates = radar_range[1] - radar_range[0]
         radar_range.axis = "radial_range_coordinate"
-        radar_range._fillValue = self._fillValueF32
-
-    def write_ray_dimension_variables(self):
-        nc = self.nc
-
-        # Number of gates in a ray.
-        ray_n_gates = nc.createVariable(
-            "ray_n_gates", dtype("int32").char, ("time"))
-        ray_n_gates[:] = np.array(self.ray_n_gates)
-        ray_n_gates.long_name = "ray_n_gates"
-        ray_n_gates.units = "unitless"
-        ray_n_gates._fillValue = self._fillValueI32
-
-        # Index of start of moments data for a ray, relative to the start of the moments array.
-        ray_start_index = nc.createVariable(
-            "ray_start_index", dtype("int32").char, ("time"))
-        ray_start_index[:] = np.array(self.ray_start_index)
-        ray_start_index.long_name = "ray_start_index"
-        ray_start_index.units = "unitless"
-        ray_start_index._fillValue = self._fillValueI32
 
     def write_location_variables(self):
         nc = self.nc
@@ -333,7 +319,6 @@ class Converter:
         latitude[:] = self.latitude
         latitude.long_name = "latitude"
         latitude.units = "degrees_north"
-        latitude._fillValue = self._fillValueF64
 
         # Longitude of instrument.
         # For a stationary platform, this is a scalar.
@@ -342,7 +327,6 @@ class Converter:
         longitude[:] = self.longitude
         longitude.long_name = "longitude"
         longitude.units = "degrees_east"
-        longitude._fillValue = self._fillValueF64
 
         # Altitude of instrument above mean sea level.
         # For a stationary platform, this is a scalar.
@@ -351,7 +335,6 @@ class Converter:
         altitude[:] = self.altitude
         altitude.long_name = "altitude"
         altitude.units = "meters"
-        altitude._fillValue = self._fillValueF64
 
     def write_sweep_variables(self):
         nc = self.nc
@@ -362,7 +345,6 @@ class Converter:
         sweep_number[:] = np.array(self.sweep_number, dtype="int32")
         sweep_number.long_name = "sweep_index_number_0_based"
         sweep_number.units = "unitless"
-        sweep_number._fillValue = self._fillValueI32
 
         # Options are: "sector", "coplane", rhi", "vertical_pointing", "idle", "azimuth_surveillance", "elevation_surveillance", "sunscan", "pointing", "manual_ppi", "manual_rhi"
         sweep_mode = nc.createVariable(
@@ -378,7 +360,6 @@ class Converter:
         fixed_angle[:] = np.array(self.fixed_angle, dtype="float32")
         fixed_angle.long_name = "target_fixed_angle"
         fixed_angle.units = "degrees"
-        fixed_angle._fillValue = self._fillValueF32
 
         # Index of first ray in sweep, relative to start of volume. 0-based
         sweep_start_ray_index = nc.createVariable(
@@ -387,7 +368,6 @@ class Converter:
             self.sweep_start_ray_index, dtype="int32")
         sweep_start_ray_index.long_name = "index_of_first_ray_in_sweep"
         sweep_start_ray_index.units = "unitless"
-        sweep_start_ray_index._fillValue = self._fillValueI32
 
         # Index of last ray in sweep, relative to start of volume. 0-based
         sweep_end_ray_index = nc.createVariable(
@@ -396,7 +376,6 @@ class Converter:
             self.sweep_end_ray_index, dtype="int32")
         sweep_end_ray_index.long_name = "index_of_last_ray_in_sweep"
         sweep_end_ray_index.units = "unitless"
-        sweep_end_ray_index._fillValue = self._fillValueI32
 
     def write_sensor_pointing_variables(self):
         nc = self.nc
@@ -408,7 +387,6 @@ class Converter:
         azimuth.long_name = "azimuth_angle_from_true_north"
         azimuth.units = "degrees"
         azimuth.axis = "radial_azimuth_coordinate"
-        azimuth._fillValue = self._fillValueF32
 
         # Elevation of antenna, relative to the horizontal plane.
         elevation = nc.createVariable(
@@ -418,17 +396,17 @@ class Converter:
         elevation.long_name = "elevation_angle_from_horizontal_plane"
         elevation.units = "degrees"
         elevation.axis = "radial_elevation_coordinate"
-        elevation._fillValue = self._fillValueF32
 
     def write_moments_field_data_variables(self):
         nc = self.nc
 
-        variable = nc.createVariable(
-            "DBZ", dtype("float32").char, ("n_points"))
+        variable = nc.createVariable("DBZ",
+                                     dtype("float32").char,
+                                     ("time", "range"),
+                                     fill_value=self._FillValueF32)
         variable[:] = self.data
         variable.standard_name = "equivalent_reflectivity_factor"
         variable.units = "dBZ"
-        variable._fillValue = self._fillValueF32
 
     def write_instrument_parameters(self):
         nc = self.nc
@@ -439,7 +417,6 @@ class Converter:
         frequency[:] = np.array([self.frequency], dtype="float32")
         frequency.long_name = "radiation_frequency"
         frequency.units = "s-1"
-        frequency._fillValue = self._fillValueF32
 
 
 def read_int(ary, i0, i1, offset):
