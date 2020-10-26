@@ -13,10 +13,14 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("grib")
     parser.add_argument("netcdf")
-    parser.add_argument("-w", "--work")
+    parser.add_argument("-w", "--work", help="path to working directory")
+    parser.add_argument(
+        "-s", "--start", help="0-based index of first output sweep", type=int)
+    parser.add_argument(
+        "-e", "--end", help="0-based index of last output sweep", type=int)
     args = parser.parse_args()
     converter = Converter()
-    converter.convert(args.grib, args.netcdf, args.work)
+    converter.convert(args)
 
 
 class Converter:
@@ -24,13 +28,15 @@ class Converter:
     _FillValueF64 = np.array(9.999e20, "float64")
     _FillValueI32 = np.array(-9999, "int32")
 
-    def convert(self, gribpath, ncpath, workdir):
-        self.gribpath = gribpath
-        self.ncpath = ncpath
-        if workdir:
-            self.workdir = workdir
+    def convert(self, args):
+        self.gribpath = args.grib
+        self.ncpath = args.netcdf
+        if args.work:
+            self.workdir = args.work
         else:
             self.workdir = "."
+        self.sweep_start = args.start
+        self.sweep_end = args.end
         self.read_grib()
         self.write_netcdf()
 
@@ -88,6 +94,9 @@ class Converter:
         self.max_nb = 0
         self.nb_list = []
         self.nr_list = []
+        self.nb_list_all = []
+        self.nr_list_all = []
+        sweep_index = 0
 
         while True:
             # Section 8
@@ -108,34 +117,41 @@ class Converter:
 
             # Section 4
             if data[offset + 4] == 4:
-                self.latitude = read_int(data, 15, 18, offset) * 1e-6
-                self.longitude = read_int(data, 19, 22, offset) * 1e-6
-                self.altitude = read_int(data, 23, 24, offset) * 1e-1
-                self.site_id = read_int(data, 29, 30, offset)
-                self.frequency = read_int(data, 33, 36, offset) * 1e3
-                time_start = read_int_sgn(data, 51, 52, offset)
-                time_end = read_int_sgn(data, 53, 54, offset)
+                self.nb_list_all.append(nb)
+                self.nr_list_all.append(nr)
+                cond_s = self.sweep_start is None or sweep_index >= self.sweep_start
+                cond_e = self.sweep_end is None or sweep_index <= self.sweep_end
+                if cond_s and cond_e:
+                    self.latitude = read_int(data, 15, 18, offset) * 1e-6
+                    self.longitude = read_int(data, 19, 22, offset) * 1e-6
+                    self.altitude = read_int(data, 23, 24, offset) * 1e-1
+                    self.site_id = read_int(data, 29, 30, offset)
+                    self.frequency = read_int(data, 33, 36, offset) * 1e3
+                    time_start = read_int_sgn(data, 51, 52, offset)
+                    time_end = read_int_sgn(data, 53, 54, offset)
 
-                self.time.extend(np.linspace(time_start, time_end, nr))
-                self.nb_list.append(nb)
-                self.nr_list.append(nr)
+                    self.time.extend(np.linspace(time_start, time_end, nr))
+                    self.nb_list.append(nb)
+                    self.nr_list.append(nr)
 
-                self.sweep_start_ray_index.append(len(self.azimuth))
-                azimuth = [(azi + 360 * i / nr) % 360 for i in range(nr)]
-                self.azimuth.extend(azimuth)
-                self.sweep_end_ray_index.append(len(self.azimuth) - 1)
+                    self.sweep_start_ray_index.append(len(self.azimuth))
+                    azimuth = [(azi + 360 * i / nr) % 360 for i in range(nr)]
+                    self.azimuth.extend(azimuth)
+                    self.sweep_end_ray_index.append(len(self.azimuth) - 1)
 
-                for x in range(nr):
-                    elv = read_int_sgn(data, 61 + 4 * x, 62 + 4 * x, offset)
-                    self.elevation.append(elv * 1e-2)
+                    for x in range(nr):
+                        elv = read_int_sgn(
+                            data, 61 + 4 * x, 62 + 4 * x, offset)
+                        self.elevation.append(elv * 1e-2)
 
-                self.sweep_number.append(len(self.sweep_number))
-                fixed_angle = read_int_sgn(data, 42, 43, offset) * 1e-2
-                self.fixed_angle.append(fixed_angle)
-                if fixed_angle < 90:
-                    self.sweep_mode.append("azimuth_surveillance")
-                else:
-                    self.sweep_mode.append("vertical_pointing")
+                    self.sweep_number.append(len(self.sweep_number))
+                    fixed_angle = read_int_sgn(data, 42, 43, offset) * 1e-2
+                    self.fixed_angle.append(fixed_angle)
+                    if fixed_angle < 90:
+                        self.sweep_mode.append("azimuth_surveillance")
+                    else:
+                        self.sweep_mode.append("vertical_pointing")
+                sweep_index += 1
 
             offset += read_int(data, 1, 4, offset)
 
@@ -155,14 +171,18 @@ class Converter:
                             dtype="float32")
         br_offset = 0
         r_offset = 0
-        for nb, nr in zip(self.nb_list, self.nr_list):
-            bstr = br_offset
-            bend = br_offset + nb * nr
-            dstr = r_offset
-            dend = r_offset + nr
-            self.data[dstr:dend, 0:nb] = buffer[bstr:bend].reshape((nr, nb))
+        for sweep_index, (nb, nr) in enumerate(zip(self.nb_list_all, self.nr_list_all)):
+            cond_s = self.sweep_start is None or sweep_index >= self.sweep_start
+            cond_e = self.sweep_end is None or sweep_index <= self.sweep_end
+            if cond_s and cond_e:
+                bstr = br_offset
+                bend = br_offset + nb * nr
+                dstr = r_offset
+                dend = r_offset + nr
+                self.data[dstr:dend, 0:nb] = buffer[bstr:bend].reshape(
+                    (nr, nb))
+                r_offset += nr
             br_offset += nb * nr
-            r_offset += nr
 
     def write_netcdf(self):
         self.nc = netCDF4.Dataset(self.ncpath, "w", format="NETCDF4")
