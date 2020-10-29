@@ -268,6 +268,10 @@ class Converter:
         nc = self.nc
 
         # Volume numbers are sequential, relative to some arbitrary start time, and may wrap.
+        volume_number = nc.createVariable("volume_number", dtype("int32").char)
+        volume_number[:] = 0  # 暫定的に0を格納
+        volume_number.long_name = "data_volume_index_number"
+        volume_number.units = "unitless"
 
         # TC time of first ray in file. Resolution is integer seconds.
         # The time(time) variable is computed relative to this time.
