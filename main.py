@@ -122,6 +122,7 @@ class Converter:
                 cond_s = self.sweep_start is None or sweep_index >= self.sweep_start
                 cond_e = self.sweep_end is None or sweep_index <= self.sweep_end
                 if cond_s and cond_e:
+                    self.parameter_number = read_int(data, 11, 11, offset)
                     self.latitude = read_int(data, 15, 18, offset) * 1e-6
                     self.longitude = read_int(data, 19, 22, offset) * 1e-6
                     self.altitude = read_int(data, 23, 24, offset) * 1e-1
@@ -423,14 +424,21 @@ class Converter:
 
     def write_moments_field_data_variables(self):
         nc = self.nc
-
-        variable = nc.createVariable("DBZ",
+        if self.parameter_number == 1:
+            short_name = "DBZ"
+            standard_name = "equivalent_reflectivity_factor"
+            units = "dBZ"
+        elif self.parameter_number == 2:
+            short_name = "VEL"
+            standard_name = "radial_velocity_of_scatterers_away_from_instrument"
+            units = "m/s"
+        variable = nc.createVariable(short_name,
                                      dtype("float32").char,
                                      ("time", "range"),
                                      fill_value=self._FillValueF32)
         variable[:] = self.data
-        variable.standard_name = "equivalent_reflectivity_factor"
-        variable.units = "dBZ"
+        variable.standard_name = standard_name
+        variable.units = units
 
     def write_instrument_parameters(self):
         nc = self.nc
