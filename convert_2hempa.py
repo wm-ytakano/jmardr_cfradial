@@ -14,10 +14,6 @@ def main():
     parser.add_argument("grib")
     parser.add_argument("netcdf")
     parser.add_argument("-w", "--work", help="path to working directory")
-    parser.add_argument(
-        "-s", "--start", help="0-based index of first output sweep", type=int)
-    parser.add_argument(
-        "-e", "--end", help="0-based index of last output sweep", type=int)
     args = parser.parse_args()
     converter = Converter()
     converter.convert(args)
@@ -35,8 +31,6 @@ class Converter:
             self.workdir = args.work
         else:
             self.workdir = "."
-        self.sweep_start = args.start
-        self.sweep_end = args.end
         self.read_grib()
         self.write_netcdf()
 
@@ -127,39 +121,36 @@ class Converter:
                         f"template 4.{template_no}には対応していません")
                 self.nb_list_all.append(nb)
                 self.nr_list_all.append(nr)
-                cond_s = self.sweep_start is None or sweep_index >= self.sweep_start
-                cond_e = self.sweep_end is None or sweep_index <= self.sweep_end
-                if cond_s and cond_e:
-                    self.parameter_number = read_int(data, 11, 11, offset)
-                    self.latitude = read_int(data, 15, 18, offset) * 1e-6
-                    self.longitude = read_int(data, 19, 22, offset) * 1e-6
-                    self.altitude = read_int(data, 23, 24, offset) * 1e-1
-                    self.site_id = read_int(data, 29, 30, offset)
-                    self.frequency = read_int(data, 33, 36, offset) * 1e3
-                    time_start = read_int_sgn(data, 51, 52, offset)
-                    time_end = read_int_sgn(data, 53, 54, offset)
+                self.parameter_number = read_int(data, 11, 11, offset)
+                self.latitude = read_int(data, 15, 18, offset) * 1e-6
+                self.longitude = read_int(data, 19, 22, offset) * 1e-6
+                self.altitude = read_int(data, 23, 24, offset) * 1e-1
+                self.site_id = read_int(data, 29, 30, offset)
+                self.frequency = read_int(data, 33, 36, offset) * 1e3
+                time_start = read_int_sgn(data, 51, 52, offset)
+                time_end = read_int_sgn(data, 53, 54, offset)
 
-                    self.time.extend(np.linspace(time_start, time_end, nr))
-                    self.nb_list.append(nb)
-                    self.nr_list.append(nr)
+                self.time.extend(np.linspace(time_start, time_end, nr))
+                self.nb_list.append(nb)
+                self.nr_list.append(nr)
 
-                    self.sweep_start_ray_index.append(len(self.azimuth))
-                    azimuth = [(azi + 360 * i / nr) % 360 for i in range(nr)]
-                    self.azimuth.extend(azimuth)
-                    self.sweep_end_ray_index.append(len(self.azimuth) - 1)
+                self.sweep_start_ray_index.append(len(self.azimuth))
+                azimuth = [(azi + 360 * i / nr) % 360 for i in range(nr)]
+                self.azimuth.extend(azimuth)
+                self.sweep_end_ray_index.append(len(self.azimuth) - 1)
 
-                    for x in range(nr):
-                        elv = read_int_sgn(
-                            data, 61 + 4 * x, 62 + 4 * x, offset)
-                        self.elevation.append(elv * 1e-2)
+                for x in range(nr):
+                    elv = read_int_sgn(
+                        data, 61 + 4 * x, 62 + 4 * x, offset)
+                    self.elevation.append(elv * 1e-2)
 
-                    self.sweep_number.append(len(self.sweep_number))
-                    fixed_angle = read_int_sgn(data, 42, 43, offset) * 1e-2
-                    self.fixed_angle.append(fixed_angle)
-                    if fixed_angle < 90:
-                        self.sweep_mode.append("azimuth_surveillance")
-                    else:
-                        self.sweep_mode.append("vertical_pointing")
+                self.sweep_number.append(len(self.sweep_number))
+                fixed_angle = read_int_sgn(data, 42, 43, offset) * 1e-2
+                self.fixed_angle.append(fixed_angle)
+                if fixed_angle < 90:
+                    self.sweep_mode.append("azimuth_surveillance")
+                else:
+                    self.sweep_mode.append("vertical_pointing")
                 sweep_index += 1
 
             offset += read_int(data, 1, 4, offset)
@@ -181,16 +172,13 @@ class Converter:
         br_offset = 0
         r_offset = 0
         for sweep_index, (nb, nr) in enumerate(zip(self.nb_list_all, self.nr_list_all)):
-            cond_s = self.sweep_start is None or sweep_index >= self.sweep_start
-            cond_e = self.sweep_end is None or sweep_index <= self.sweep_end
-            if cond_s and cond_e:
-                bstr = br_offset
-                bend = br_offset + nb * nr
-                dstr = r_offset
-                dend = r_offset + nr
-                self.data[dstr:dend, 0:nb] = buffer[bstr:bend].reshape(
-                    (nr, nb))
-                r_offset += nr
+            bstr = br_offset
+            bend = br_offset + nb * nr
+            dstr = r_offset
+            dend = r_offset + nr
+            self.data[dstr:dend, 0:nb] = buffer[bstr:bend].reshape(
+                (nr, nb))
+            r_offset += nr
             br_offset += nb * nr
 
     def write_netcdf(self):
