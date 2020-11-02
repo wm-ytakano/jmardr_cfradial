@@ -105,6 +105,10 @@ class Converter:
 
             # Section 3
             if data[offset + 4] == 3:
+                template_no = read_int(data, 13, 14, offset)
+                if template_no != 50120:
+                    raise GRIBDecodeError(
+                        f"template 3.{template_no}には対応していません")
                 nb = read_int(data, 15, 18, offset)  # 径線に沿った資料ビン(data bins)の数
                 nr = read_int(data, 19, 22, offset)  # 径線の数
                 dx = read_int(data, 31, 34, offset) * 1e-3  # 径線に沿ったビンの間隔
@@ -117,6 +121,10 @@ class Converter:
 
             # Section 4
             if data[offset + 4] == 4:
+                template_no = read_int(data, 8, 9, offset)
+                if template_no != 51022:
+                    raise GRIBDecodeError(
+                        f"template 4.{template_no}には対応していません")
                 self.nb_list_all.append(nb)
                 self.nr_list_all.append(nr)
                 cond_s = self.sweep_start is None or sweep_index >= self.sweep_start
@@ -461,6 +469,10 @@ def read_int_sgn(ary, i0, i1, offset):
     if result & 1 << (l - 1) > 0:
         result = -(result & ~(1 << (l - 1)))
     return result
+
+
+class GRIBDecodeError(Exception):
+    pass
 
 
 if __name__ == "__main__":
