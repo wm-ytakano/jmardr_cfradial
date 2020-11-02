@@ -18,4 +18,5 @@
 ## リンク
 
 -   [配信資料に関する仕様 No.13702 レーダー毎極座標データ（レーダーエコー強度 GPV、ドップラー速度 GPV）](https://www.data.jma.go.jp/add/suishin/shiyou/pdf/no13702)
+-   [二重偏波気象レーダー極座標データフォーマット (PPI・RHI 観測共通)](https://www.data.jma.go.jp/developer/past_data/app/2hempa_format_20200914.pdf)
 -   [CfRadial Data File Format](https://ral.ucar.edu/projects/titan/docs/radial_formats/CfRadialDoc.pdf)
