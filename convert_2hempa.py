@@ -1,7 +1,6 @@
-import os
-import subprocess
 from datetime import datetime
 from datetime import timedelta
+import struct
 import numpy as np
 from numpy import dtype
 import netCDF4
@@ -35,10 +34,6 @@ class Converter:
         self.write_netcdf()
 
     def read_grib(self):
-        self.read_header()
-        self.read_values()
-
-    def read_header(self):
         with open(self.gribpath, "rb") as f:
             data = bytearray(f.read())
 
@@ -84,102 +79,122 @@ class Converter:
         # Index of last ray in sweep, relative to start of volume. 0-based
         self.sweep_end_ray_index = []
 
-        # nbの最大値
-        self.max_nb = 0
-        self.nb_list = []
-        self.nr_list = []
-        self.nb_list_all = []
-        self.nr_list_all = []
+        # Nbの最大値
+        self.max_Nb = 0
+        self.Nb_list = []
+        self.Nr_list = []
         sweep_index = 0
 
+        self.data = []
+
         while True:
-            # Section 8
+            # Section 8 終端節
             if data[offset:offset + 4] == b"7777":
                 break
 
-            # Section 3
+            # Section 3 格子系定義節
             if data[offset + 4] == 3:
-                template_no = read_int(data, 13, 14, offset)
-                if template_no != 50120:
+                template_number = read_int(data, 13, 14, offset)
+                if template_number != 50121:
                     raise GRIBDecodeError(
-                        f"template 3.{template_no}には対応していません")
-                nb = read_int(data, 15, 18, offset)  # 径線に沿った資料ビン(data bins)の数
-                nr = read_int(data, 19, 22, offset)  # 径線の数
-                dx = read_int(data, 31, 34, offset) * 1e-3  # 径線に沿ったビンの間隔
-                dstart = read_int(data, 35, 38, offset)
-                radar_range = dstart + np.arange(nb) * dx + dx / 2
-                azi = read_int(data, 40, 41, offset) * 1e-2  # 開始方位
-                if nb > self.max_nb:
-                    self.max_nb = nb
-                    self.radar_range = radar_range
+                        f"template 3.{template_number}には対応していません")
 
-            # Section 4
-            if data[offset + 4] == 4:
-                template_no = read_int(data, 8, 9, offset)
-                if template_no != 51022:
+                h_sweep_mode = read_int(data, 39, 39, offset)
+                if h_sweep_mode != 0:
                     raise GRIBDecodeError(
-                        f"template 4.{template_no}には対応していません")
-                self.nb_list_all.append(nb)
-                self.nr_list_all.append(nr)
-                self.parameter_number = read_int(data, 11, 11, offset)
-                self.latitude = read_int(data, 15, 18, offset) * 1e-6
-                self.longitude = read_int(data, 19, 22, offset) * 1e-6
-                self.altitude = read_int(data, 23, 24, offset) * 1e-1
-                self.site_id = read_int(data, 29, 30, offset)
-                self.frequency = read_int(data, 33, 36, offset) * 1e3
-                time_start = read_int_sgn(data, 51, 52, offset)
-                time_end = read_int_sgn(data, 53, 54, offset)
+                        f"：走査モード(水平極座標) {h_sweep_mode}には対応していません")
 
-                self.time.extend(np.linspace(time_start, time_end, nr))
-                self.nb_list.append(nb)
-                self.nr_list.append(nr)
+                Nb = read_int(data, 15, 18, offset)  # 径線に沿った資料ビン(data bins)の数
+                Nr = read_int(data, 19, 22, offset)  # 径線の数
+                Dx = read_int(data, 31, 34, offset) * 1e-3  # 径線に沿ったビンの間隔
+                Dstart = read_int(data, 35, 38, offset)
+                fixed_angle = read_int_sgn(data, 43, 44, offset) * 1e-2
+                Fa = read_int(data, 53, 53, offset)
+                Fe = read_int(data, 54, 54, offset)
 
-                self.sweep_start_ray_index.append(len(self.azimuth))
-                azimuth = [(azi + 360 * i / nr) % 360 for i in range(nr)]
-                self.azimuth.extend(azimuth)
-                self.sweep_end_ray_index.append(len(self.azimuth) - 1)
+                self.Nb_list.append(Nb)
+                self.Nr_list.append(Nr)
 
-                for x in range(nr):
-                    elv = read_int_sgn(
-                        data, 61 + 4 * x, 62 + 4 * x, offset)
-                    self.elevation.append(elv * 1e-2)
-
-                self.sweep_number.append(len(self.sweep_number))
-                fixed_angle = read_int_sgn(data, 42, 43, offset) * 1e-2
                 self.fixed_angle.append(fixed_angle)
                 if fixed_angle < 90:
                     self.sweep_mode.append("azimuth_surveillance")
                 else:
                     self.sweep_mode.append("vertical_pointing")
+
+                radar_range = Dstart + np.arange(Nb) * Dx + Dx / 2
+                if Nb > self.max_Nb:
+                    self.max_Nb = Nb
+                    self.radar_range = radar_range
+
+                self.sweep_start_ray_index.append(len(self.azimuth))
+                for x in range(1, Nr + 1):
+                    i0 = (58 + 2 * x - 1) * Fa
+                    i1 = (58 + 2 * x) * Fa
+                    azimuth = read_int(data, i0, i1, offset) * 1e-2
+                    self.azimuth.append(azimuth)
+
+                    i0 = (58 + 2 * Nr * Fa + 2 * x - 1) * Fe
+                    i1 = (58 + 2 * Nr * Fa + 2 * x) * Fe
+                    elevation = read_int_sgn(data, i0, i1, offset) * 1e-2
+                    self.elevation.append(elevation)
+                self.sweep_end_ray_index.append(len(self.azimuth) - 1)
+
+            # Section 4 プロダクト定義節
+            if data[offset + 4] == 4:
+                template_number = read_int(data, 8, 9, offset)
+                if template_number != 51123:
+                    raise GRIBDecodeError(
+                        f"template 4.{template_number}には対応していません")
+
+                self.parameter_number = read_int(data, 11, 11, offset)
+                self.latitude = read_int(data, 14, 17, offset) * 1e-6
+                self.longitude = read_int(data, 18, 21, offset) * 1e-6
+                self.altitude = read_int(data, 22, 23, offset) * 1e-1
+                self.site_id = read_int(data, 28, 29, offset)
+                self.time_start = read_int_sgn(data, 33, 34, offset)
+                self.time_end = read_int_sgn(data, 35, 36, offset)
+                self.frequency = read_int(data, 37, 40, offset) * 1e3
+                Fp = read_int(data, 56, 56, offset)
+                Ft = read_int(data, 57, 57, offset)
+
+                time_sum = self.time_start
+                for x in range(1, Nr + 1):
+                    i0 = (61 + 2 * Nr * Fp + 2 * x - 1) * Ft
+                    i1 = (61 + 2 * Nr * Fp + 2 * x) * Ft
+                    time = read_int(data, i0, i1, offset) * 1e-3
+                    time_sum += time
+                    self.time.append(time_sum - time / 2)
+
+                self.sweep_number.append(len(self.sweep_number))
                 sweep_index += 1
 
+            # Section 5 資料表現節
+            if data[offset + 4] == 5:
+                template_number = read_int(data, 10, 11, offset)
+                if template_number != 0:
+                    raise GRIBDecodeError(
+                        f"template 5.{template_number}には対応していません")
+
+                total_points = read_int(data, 6, 9, offset)
+                R = read_float(data, 12, 15, offset)
+                E = read_int(data, 16, 17, offset)
+                D = read_int(data, 18, 19, offset)
+                data_byte = int(read_int(data, 20, 20, offset) / 8)
+
+            # Section 7 資料節
+            if data[offset + 4] == 7:
+                for i in range(total_points):
+                    i0 = 6 + i * data_byte
+                    i1 = 6 + (i + 1) * data_byte - 1
+                    Z = read_int(data, i0, i1, offset)
+                    if Z == 2 ** (data_byte * 8) - 1:
+                        Y = self._FillValueF32
+                    else:
+                        Y = (R + Z * 2 ** E) * 10 ** (-D)
+                    self.data.append(Y)
+                self.data = np.array(
+                    self.data, dtype="float32").reshape((Nr, Nb))
             offset += read_int(data, 1, 4, offset)
-
-    def read_values(self):
-        gribname = os.path.basename(self.gribpath)
-        grdname = f"{self.workdir}/{gribname}.grd"
-        subprocess.run(["wgrib2", self.gribpath, "-no_header", "-bin", grdname],
-                       stdout=subprocess.DEVNULL,
-                       stderr=subprocess.DEVNULL)
-        buffer = np.fromfile(grdname, dtype="<f")
-        subprocess.run(["rm", "-f", grdname],
-                       stdout=subprocess.DEVNULL,
-                       stderr=subprocess.DEVNULL)
-
-        self.data = np.full((np.sum(self.nr_list), self.max_nb),
-                            self._FillValueF32,
-                            dtype="float32")
-        br_offset = 0
-        r_offset = 0
-        for sweep_index, (nb, nr) in enumerate(zip(self.nb_list_all, self.nr_list_all)):
-            bstr = br_offset
-            bend = br_offset + nb * nr
-            dstr = r_offset
-            dend = r_offset + nr
-            self.data[dstr:dend, 0:nb] = buffer[bstr:bend].reshape(
-                (nr, nb))
-            r_offset += nr
-            br_offset += nb * nr
 
     def write_netcdf(self):
         self.nc = netCDF4.Dataset(self.ncpath, "w", format="NETCDF4")
@@ -251,7 +266,7 @@ class Converter:
         nc.createDimension("time", len(self.time))
 
         # The number of range bin
-        nc.createDimension("range", self.max_nb)
+        nc.createDimension("range", self.max_Nb)
 
         # The number of sweeps
         nc.createDimension("sweep", len(self.sweep_number))
@@ -275,7 +290,7 @@ class Converter:
         # Format is: yyyy-mm-ddThh:mm:ssZ
         time_coverage_start = nc.createVariable(
             "time_coverage_start", "S1", ('string_length'))
-        t = self.time_reference + timedelta(seconds=self.time[0])
+        t = self.time_reference + timedelta(seconds=self.time_start)
         tstr = t.strftime("%Y-%m-%dT%H:%M:%SZ")
         datain = np.array(tstr, dtype="S20")
         time_coverage_start[:] = stringtochar(datain)
@@ -286,7 +301,7 @@ class Converter:
         # Format is: yyyy-mm-ddThh:mm:ssZ
         time_coverage_end = nc.createVariable(
             "time_coverage_end", "S1", ('string_length'))
-        t = self.time_reference + timedelta(seconds=self.time[-1])
+        t = self.time_reference + timedelta(seconds=self.time_end)
         tstr = t.strftime("%Y-%m-%dT%H:%M:%SZ")
         datain = np.array(tstr, dtype="S20")
         time_coverage_end[:] = stringtochar(datain)
@@ -420,7 +435,11 @@ class Converter:
 
     def write_moments_field_data_variables(self):
         nc = self.nc
-        if self.parameter_number == 1:
+        if self.parameter_number == 0:
+            short_name = "WIDTH"
+            standard_name = "doppler_spectrum_width"
+            units = "m/s"
+        elif self.parameter_number in [1, 195, 196]:
             short_name = "DBZ"
             standard_name = "equivalent_reflectivity_factor"
             units = "dBZ"
@@ -428,6 +447,25 @@ class Converter:
             short_name = "VEL"
             standard_name = "radial_velocity_of_scatterers_away_from_instrument"
             units = "m/s"
+        elif self.parameter_number == 197:
+            short_name = "ZDR"
+            standard_name = "log_differential_reflectivity_hv"
+            units = "dB"
+        # self.parameter_number === 198 psidp, I don't know what it is.
+        elif self.parameter_number == 199:
+            short_name = "RHOHV"
+            standard_name = "cross_correlation_ratio_hv"
+            units = "unitless"
+        elif self.parameter_number == 201:
+            short_name = "PHIDP"
+            standard_name = "differential_phase_hv"
+            units = "degrees"
+        elif self.parameter_number == 202:
+            short_name = "KDP"
+            standard_name = "specific_differential_phase_hv"
+            units = "degrees/km"
+        else:
+            raise GRIBDecodeError(f"未対応のパラメータ番号{self.parameter_number}です")
         variable = nc.createVariable(short_name,
                                      dtype("float32").char,
                                      ("time", "range"),
@@ -445,6 +483,12 @@ class Converter:
         frequency[:] = np.array([self.frequency], dtype="float32")
         frequency.long_name = "radiation_frequency"
         frequency.units = "s-1"
+
+
+def read_float(ary, i0, i1, offset):
+    bl = ary[offset + i0 - 1:offset + i1]
+    ba = bytearray(bl)
+    return struct.unpack(">f", ba)[0]
 
 
 def read_int(ary, i0, i1, offset):

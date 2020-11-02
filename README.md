@@ -7,12 +7,15 @@
 -   Python3
     -   numpy
     -   netCDF4
--   wgrib2
+-   wgrib2 (`convert_1hempa.py`のみ)
+
+## 実行ファイル
+
+-   `convert_1hempa.py` 単偏波 GRIB 用
+-   `convert_2hempa.py` 二重偏波 GRIB 用
 
 ## TODO
 
--   偏波パラメータなど他要素への対応
--   エコー強度：エコーなしが 0dBZ 扱いなのをどう扱うべきか
 -   ドップラー速度：パルス繰り返し周波数の格納
 
 ## リンク
