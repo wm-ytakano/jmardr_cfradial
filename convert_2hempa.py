@@ -6,6 +6,9 @@ from numpy import dtype
 import netCDF4
 from netCDF4 import stringtochar
 import argparse
+import warnings
+
+warnings.simplefilter('ignore', DeprecationWarning)
 
 
 def main():
@@ -183,17 +186,27 @@ class Converter:
 
             # Section 7 資料節
             if data[offset + 4] == 7:
-                for i in range(total_points):
-                    i0 = 6 + i * data_byte
-                    i1 = 6 + (i + 1) * data_byte - 1
-                    Z = read_int(data, i0, i1, offset)
-                    if Z == 2 ** (data_byte * 8) - 1:
-                        Y = self._FillValueF32
-                    else:
-                        Y = (R + Z * 2 ** E) * 10 ** (-D)
-                    self.data.append(Y)
-                self.data = np.array(
-                    self.data, dtype="float32").reshape((Nr, Nb))
+                if self.parameter_number in [206, 215]:  # QCI
+                    for i in range(total_points):
+                        i0 = 6 + i * data_byte
+                        i1 = 6 + (i + 1) * data_byte - 1
+                        Z = read_int(data, i0, i1, offset)
+                        Y = int((R + Z * 2 ** E) * 10 ** (-D))
+                        self.data.append(Y)
+                    self.data = np.array(
+                        self.data, dtype="uint8").reshape((Nr, Nb))
+                else:
+                    for i in range(total_points):
+                        i0 = 6 + i * data_byte
+                        i1 = 6 + (i + 1) * data_byte - 1
+                        Z = read_int(data, i0, i1, offset)
+                        if Z == 2 ** (data_byte * 8) - 1:
+                            Y = self._FillValueF32
+                        else:
+                            Y = (R + Z * 2 ** E) * 10 ** (-D)
+                        self.data.append(Y)
+                    self.data = np.array(
+                        self.data, dtype="float32").reshape((Nr, Nb))
             offset += read_int(data, 1, 4, offset)
 
     def write_netcdf(self):
@@ -435,7 +448,7 @@ class Converter:
 
     def write_moments_field_data_variables(self):
         nc = self.nc
-        if self.parameter_number == 0:
+        if self.parameter_number in [0, 230]:
             short_name = "WIDTH"
             standard_name = "doppler_spectrum_width"
             units = "m/s"
@@ -443,7 +456,7 @@ class Converter:
             short_name = "DBZ"
             standard_name = "equivalent_reflectivity_factor"
             units = "dBZ"
-        elif self.parameter_number == 2:
+        elif self.parameter_number in [2, 228]:
             short_name = "VEL"
             standard_name = "radial_velocity_of_scatterers_away_from_instrument"
             units = "m/s"
@@ -451,7 +464,10 @@ class Converter:
             short_name = "ZDR"
             standard_name = "log_differential_reflectivity_hv"
             units = "dB"
-        # self.parameter_number === 198 psidp, I don't know what it is.
+        elif self.parameter_number == 198:
+            short_name = "PSIDP"
+            standard_name = "radar_total_differential_phase_hv"
+            units = "degrees"
         elif self.parameter_number == 199:
             short_name = "RHOHV"
             standard_name = "cross_correlation_ratio_hv"
@@ -464,12 +480,21 @@ class Converter:
             short_name = "KDP"
             standard_name = "specific_differential_phase_hv"
             units = "degrees/km"
+        elif self.parameter_number in [206, 215]:
+            short_name = "QCI"
+            standard_name = "quality_control_information"
+            units = "unitless"
         else:
             raise GRIBDecodeError(f"未対応のパラメータ番号{self.parameter_number}です")
-        variable = nc.createVariable(short_name,
-                                     dtype("float32").char,
-                                     ("time", "range"),
-                                     fill_value=self._FillValueF32)
+        if self.parameter_number in [206, 215]:
+            variable = nc.createVariable(short_name,
+                                         dtype("uint8").char,
+                                         ("time", "range"))
+        else:
+            variable = nc.createVariable(short_name,
+                                         dtype("float32").char,
+                                         ("time", "range"),
+                                         fill_value=self._FillValueF32)
         variable[:] = self.data
         variable.standard_name = standard_name
         variable.units = units
