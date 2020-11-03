@@ -15,7 +15,6 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("grib")
     parser.add_argument("netcdf")
-    parser.add_argument("-w", "--work", help="path to working directory")
     args = parser.parse_args()
     converter = Converter()
     converter.convert(args)
@@ -29,10 +28,6 @@ class Converter:
     def convert(self, args):
         self.gribpath = args.grib
         self.ncpath = args.netcdf
-        if args.work:
-            self.workdir = args.work
-        else:
-            self.workdir = "."
         self.read_grib()
         self.write_netcdf()
 
