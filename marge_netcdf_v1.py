@@ -116,7 +116,7 @@ class Merger() :
                     elif name == "sweep_start_ray_index" :
                         nc.variables[name][n] = ns
                     elif name == "sweep_end_ray_index" :
-                        nc.variables[name][n] = ne
+                        nc.variables[name][n] = ne - 1
                     else:
                         nc.variables[name][n] = src.variables[name][:]
                     
