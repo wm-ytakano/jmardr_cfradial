@@ -455,6 +455,10 @@ class Converter:
             short_name = "VEL"
             standard_name = "radial_velocity_of_scatterers_away_from_instrument"
             units = "m/s"
+        elif self.parameter_number == 194:
+            short_name = "RFI" # in JMA RFI
+            standard_name = "radar_estimated_rain_rate"
+            units = "mm/h"
         elif self.parameter_number == 197:
             short_name = "ZDR"
             standard_name = "log_differential_reflectivity_hv"
