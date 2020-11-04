@@ -447,7 +447,7 @@ class Converter:
             short_name = "WIDTH"
             standard_name = "doppler_spectrum_width"
             units = "m/s"
-        elif self.parameter_number in [1, 195, 196]:
+        elif self.parameter_number == 1:
             short_name = "DBZ"
             standard_name = "equivalent_reflectivity_factor"
             units = "dBZ"
@@ -456,9 +456,17 @@ class Converter:
             standard_name = "radial_velocity_of_scatterers_away_from_instrument"
             units = "m/s"
         elif self.parameter_number == 194:
-            short_name = "RFI" # in JMA RFI
+            short_name = "RRR" # in JMA RFI
             standard_name = "radar_estimated_rain_rate"
             units = "mm/h"
+        elif self.parameter_number == 195:
+            short_name = "DBZH"
+            standard_name = "equivalent_reflectivity_factor_h"
+            units = "dBZ"
+        elif self.parameter_number == 196:
+            short_name = "DBZV"
+            standard_name = "equivalent_reflectivity_factor_v"
+            units = "dBZ"
         elif self.parameter_number == 197:
             short_name = "ZDR"
             standard_name = "log_differential_reflectivity_hv"
